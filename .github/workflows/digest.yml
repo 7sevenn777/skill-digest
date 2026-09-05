@@ -1,0 +1,44 @@
+name: weekly-digest
+
+on:
+  schedule:
+    # 每天 10:23（北京时间）= UTC 02:23；整点任务容易延迟，选了错峰时间
+    - cron: "23 2 * * *"
+  workflow_dispatch: {}   # 允许在 Actions 页面手动触发，方便先跑一次验证
+
+permissions:
+  contents: write   # 提交 digest/ 和 data/seen.json
+  issues: write     # 开 Issue 推送周报
+
+concurrency:
+  group: weekly-digest
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: 抓取 + 翻译 + 写入 digest
+        env:
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/digest.py
+
+      - name: 提交本日 digest
+        run: |
+          git config user.name  "digest-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add digest data
+          git commit -m "chore: digest $(date -u +%F)" || echo "nothing to commit"
+          git push
